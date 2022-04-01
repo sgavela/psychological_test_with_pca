@@ -1,0 +1,778 @@
+---
+title: "Práctica Análisis Multivariante"
+author: "Sergio"
+date: "24/1/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Feature engineering
+
+Vamos a emplear un dataset que contiene las respuestas a una encuesta muy amplia sobre gustos e intereses (películas, musicales, hobbies, fobias, hábitos de salud, etc.). Además de las respuestas a la encuesta también hay algunos datos de los encuestados como edad, sexo, número de hermanos,...
+
+```{r}
+data <- read.csv('./data/responses.csv')
+```
+```{r}
+dim(data)
+```
+Las dimensiones del dataset hacen un poco inútil hacer str o summary. No obstante tenemos mucha información sobre lo que contiene:
+
+- Todas las variables correspondientes a preguntas toman valores 1, 2, 3, 4 o 5
+- Hay unas pocas variables demográficas como género o zurdo/diestro que contienen valores categóricos
+
+Todas las variables vienen muy bien descritas en la descripción del dataset:
+
+### https://www.kaggle.com/miroslavsabo/young-people-survey
+
+El objetivo de esta práctica será analizar si las preferencias musicales, preferencias de peliculas, actitudes ante la vida, hobbies y fobias definen quienes somos (hombre/mujer, de pueblo/de ciudad, zurdo/diestro,...). En esta línea la principal hipótesis que vamos a intentar aceptar o rechazar es "Tus gustos, intereses, opiniones y fobias definen quién eres".
+
+Dado que el dataset tiene muchas variables (150) vamos a ver como están repartidas (ver link arriba) para quedarnos solo con algunas:
+
+- Music preferences (19 items)
+- Movie preferences (12 items)
+- Hobbies & interests (32 items)
+- Phobias (10 items)
+- Health habits (3 items)
+- Personality traits, views on life, & opinions (57 items)
+- Spending habits (7 items)
+- Demographics (10 items)
+
+Vamos a descartar las variables relacionadas con hábitos de salud y las relacionadas con hábitos de consumo ya que son categóricas (las respuestas a la encuesta son del estilo "Fumo", "Antes fumaba", "Nunca he fumado"). 
+
+En cambio sí nos quedaremos con las variables relacionadas con 
+
+- Gustos musicales
+- Gustos de películas
+- Hobbies e interes
+- Opiniones y visión de la vida
+- Fobias
+
+Todas estas variables toman valores desde 1 hasta 5. Siendo 5 muy interesado y 1 muy poco interesado. Además nos quedaremos también con las variables demográficas (sexo, mano buena, edad, etc. ya que serán las que usaremos para contrastar nuestras hipótesis).
+
+```{r}
+library(dplyr)
+```
+
+```{r}
+music <- data[,1:19]
+movies <- data[,20:31]
+hobbies <- data[,32:63]
+phobias <- data[,64:73]
+opinions <- data[,77:107]
+opinions <- cbind(opinions, data[,110:132])
+demographics <- data[,141:150]
+#quitamos algunas variables demográficas que no intervendrán en el contraste de nuestra hipótesis (usaremos el resto)
+demographics <- select(demographics, -Height, -Weight, -Number.of.siblings)
+
+data <- cbind(music, movies)
+data <- cbind(data,hobbies)
+data <- cbind(data, phobias)
+data <- cbind(data, opinions)
+data <- cbind(data, demographics)
+str(data)
+```
+
+Convertimos Age en una variable binaria para la visualización (<=20 y >20)
+
+```{r}
+boxplot(data$Age)
+```
+```{r}
+data$Age <- data$Age <- ifelse(data$Age <= 20, "Less or equal 20", "More than 20")
+```
+
+Guardamos en un vector el nombre de las variables demográficas para quitarlas fácilmente para hacer el análisis (las variables demográficas las usaremos al final para contrastar nuestra hipótesis "Tus gustos, intereses y fobias definen quién eres")
+
+```{r}
+demographics_column_names <- colnames(demographics)
+demographics_column_names
+```
+
+Hagamos ahora un análisis de missing values.
+
+```{r}
+sum(is.na(data))
+```
+
+```{r}
+apply(X = is.na(data), MARGIN = 2, FUN = sum)
+```
+
+Vemos que hay un número considerable de NA (310 en un dataset con 1010 filas donde 310 filas tienen NAs). Podríamos imputarlos haciendo una regresión con el resto de variables (usando mice por ejemplo). No obstante:
+
+- 700 filas siguen siendo suficientes para nuestro estudio
+- Los NAs posiblemente correspondan a gente que no quiso responder esa pregunta en la encuesta por lo que si tiene algo que ocultar es probable que mintiese en la respuesta a otras preguntas. Esto podría introducir datos falaces.
+
+```{r}
+data <- na.omit(data)
+```
+
+Algunos NA en las variables categóricas vienen en forma de caracteres vacios:
+
+```{r}
+data <- data[data$Gender != "",]
+data <- data[data$Age != "",]
+data <- data[data$Left...right.handed != "",]
+data <- data[data$Village...town != "",]
+data <- data[data$Only.child != "",]
+dim(data)
+```
+
+## Análisis descriptivo multivariante
+
+Parece inviable analizar 140 variables a la vez por lo que iremos viendo algunas correlaciones y algunos insights que pueden ser interesantes seleccionando algunas de las variables.
+
+Comencemos por ver que correlaciones existen entre los gustos musicales:
+
+```{r}
+library(corrplot)
+```
+
+```{r}
+music <- na.omit(music[3:length(music)]) #la primera variable es cuanto gusta la música en general y la segunda la música rápida o lenta
+corrplot(cor(music))
+```
+Vemos que algunas correlaciones destacadas son:
+
+- Música clásica y opera
+- Rock, Metal y Punk
+- Rock and roll y Rock
+- Opera y musicales
+
+Hagamos lo mismo ahora para los gustos cinematográficos:
+
+```{r}
+movies <- na.omit(movies[2:length(movies)]) 
+corrplot(cor(movies))
+```
+
+Aquí las correlaciones más destacadas son:
+
+- Dibujos animados y cuentos fantásticos
+- Western y películas de guerra
+- Horror y thriller
+- Acción y ciencia ficción
+
+Finalmente hacemos lo mismo con los hobbies:
+
+```{r}
+hobbies <- na.omit(hobbies[1:20]) 
+corrplot(cor(hobbies))
+```
+
+Las más destacables son:
+
+- Medicina, química y biología
+- Derecho y política
+- Física y matemáticas
+
+En el siguiente gráfico podemos ver pintada la correlación entre el gusto por las películas de horror y los thrillers. Además pintamos de rojo los hijos únicos y de azul los no únicos. Vemos que ni el género ni el ser hijo único influyen significativamente en esta correlacion. Es curioso que la curva de regresión de los hijos únicos varones se parezca mucho a la de las hijas no únicas mujeres y a la inversa, la de los hijos no únicos varones se parezca a la de las hijas únicas mujeres:
+
+```{r}
+library(ggplot2)
+```
+```{r}
+ggplot(data, aes(x=Horror, y=Thriller, col=Only.child))+geom_jitter()+geom_smooth()+facet_grid(cols=vars(Gender))
+```
+
+Veamos ahora los intereses en cuanto a carrearas universitarias de hombres y mujeres:
+
+```{r}
+library(tidyr)
+```
+```{r}
+grades_by_gender <- data %>% group_by(Gender) %>% summarise(
+  History=mean(History), 
+  Psychology=mean(Psychology),
+  Mathematics=mean(Mathematics),
+  Physics=mean(Physics),
+  Medicine=mean(Medicine),
+  Law=mean(Law),
+  Languages=mean(Foreign.languages),
+  Geography=mean(Geography),
+  Economy=mean(Economy.Management)
+    ) 
+grades_by_gender <- pivot_longer(grades_by_gender, cols=2:length(grades_by_gender), names_to="Discipline", values_to="Interest")
+
+ggplot(grades_by_gender, aes(x=Discipline,y=Interest,fill=Gender))+geom_col(position="dodge", width=0.5)+labs(title="Discipline interest by gender")
+```
+
+Conclusiones:
+
+- La disciplina más preferida por todo el mundo son las lenguas extranjeras
+- Las disciplinas menos preferidas son física y derecho
+
+- Las disciplinas más preferidas por mujeres que por hombres: Psicología, lenguas extranjeras y medicina
+- Las disciplinas más preferidas por hombres que por mujeres: Matemáticas, física y historia
+- Las disciplinas igual de preferidas: Derecho, geografía y economía
+
+Veamos ahora un insight que si bien no es conclusivo, puede ser curioso:
+
+```{r}
+grades_by_hand <- data %>% group_by(Left...right.handed) %>% summarise(
+  History=mean(History), 
+  Psychology=mean(Psychology),
+  Mathematics=mean(Mathematics),
+  Physics=mean(Physics),
+  Medicine=mean(Medicine),
+  Law=mean(Law),
+  Languages=mean(Foreign.languages),
+  Geography=mean(Geography),
+  Economy=mean(Economy.Management)
+    ) 
+grades_by_hand <- pivot_longer(grades_by_hand, cols=2:length(grades_by_hand), names_to="Discipline", values_to="Interest")
+
+ggplot(grades_by_hand, aes(x=Discipline,y=Interest,fill=Left...right.handed))+geom_col(position="dodge", width=0.5)+labs(title="Discipline interest by good hand")
+```
+
+- ¿Tienen los zurdos más interés en la física que los diestros?
+
+Estos insights dan cierta luz sobre la pregunta que nos haciamos y es que sí parece haber cierta correlación entre los gustos de las personas y su sexo pero no parece estar claro que lo haya atendiendo a la mano buena. En todo caso para poder integrar todas las variables de las que disponemos en lugar de eternizarnos haciendo gráficas para gustos musicales, opiniones, hobbies,... será mejor recurrir a técnicas para reducir las dimensiones.
+
+## PCA
+
+```{r}
+pca = prcomp(select(data,-demographics_column_names), scale=T)
+summary(pca)
+```
+
+Veamos que hay en la PC1
+
+```{r}
+barplot(pca$rotation[,1], las=2, col="darkblue")
+```
+
+Como hay muchas variables el gráfico es indescifrable. Vamos a quedarnos con las columnas con un valor por encima de un determinado umbral que fijamos a "ojo", es decir, lo vamos ajustando hasta quedarnos con 10 variables.
+
+```{r}
+component_1_logical <- abs(pca$rotation[,1]) > 0.148
+pc_1 <- colnames(select(data,-demographics_column_names))[component_1_logical]
+pc_1
+```
+
+```{r}
+component_2_logical <- abs(pca$rotation[,2]) > 0.1459
+pc_2 <- colnames(select(data,-demographics_column_names))[component_2_logical]
+pc_2
+```
+```{r}
+component_3_logical <- abs(pca$rotation[,3]) > 0.165
+pc_3 <- colnames(select(data,-demographics_column_names))[component_3_logical]
+pc_3
+```
+```{r}
+component_4_logical <- abs(pca$rotation[,4]) > 0.14965
+pc_4 <- colnames(select(data,-demographics_column_names))[component_4_logical]
+pc_4
+```
+
+Vemos como aproximadamente las tres primeras componentes principales están describiendo 3 personalidades muy definidas:
+
+- pc_1: Personalidad emocional y sensible. La llamaremos "sensibilidad".
+  + Le gusta el arte y el romanticismo (Reading, Art.exhibitions, Theatre). 
+  + Le gusta abstraerse en su mundo (Fantasy.Fairy.tales, Writing.notes). 
+  + Es muy sensible (Life.struggles ~ I cry when I feel down or things don't go the right way).
+- pc_2: Personalidad racional/cultural. La llamaremos "racionalidad".
+  + Le gusta las ciencias exactas y acumular conocimiento (History, Physics, Science.and.technology, Documentary)
+  + Le gusta la música clásica (Classical.music, Opera)
+- pc_3: Personalidad extrovertida. La llamaremos "extroversión".
+  + Le gusta socializar (Socializing, Number.of.friends)
+  + Tiene mucha energía y se siente feliz (Energy.levels, Happiness.in.life, Personality ~ I believe all my personality traits are positive.)
+  + Le gusta salir de fiesta (Dance, Pop, Hiphop..Rap)
+- pc_4: Personalidad agresiva. La llamaremos "agresividad"
+  + Le gustan los géneros de terror y thriller
+  + Se enfada con facilidad (Getting.angry, Criminal.damage, Changing.the.past ~ I wish I could change the past because of the things I have done)
+  
+Es curioso que cada una de las pc se pueda asociar aproximadamente a cada una de las principales personalidades que se usan en los test psicológicos actualmente:
+
+- pc_1: emocional-introvertido (comprensivo, conciliador, paciente)
+- pc_2: racional-introvertido (objetivo, analítico, metódico)
+- pc_3: emocional-extrovertido (espontáneo, sociable, comunicativo)
+- pc_4: racional-extrovertido (directo, dominante, competitivo)
+
+Más adelante comprobaremos si estos perfiles se corresponden con el género, zurdo/diestro, pueblo/ciudad, edad,...
+
+Antes, visualicemos las aportaciones de cada variable a las componentes:
+
+```{r}
+library(GGally) 
+library(factoextra) 
+```
+
+Nuevamente, al haber muchas variables no se puede ver nada
+
+```{r}
+fviz_contrib(pca, choice = "var", axes = 1)
+```
+
+Nos fabricamos el gráfico con las variables con más contribucion
+
+```{r}
+contribution_percentage_pc1 <- (abs(pca$rotation[,1]*100))/sum(abs(pca$rotation[,1]))
+sorted_contributions_pc1 <- sort(contribution_percentage_pc1[component_1_logical], decreasing=TRUE)
+barplot(sorted_contributions_pc1, las=2, col="darkblue")
+```
+```{r}
+contribution_percentage_pc2 <- (abs(pca$rotation[,2]*100))/sum(abs(pca$rotation[,2]))
+sorted_contributions_pc2 <- sort(contribution_percentage_pc2[component_2_logical], decreasing=TRUE)
+barplot(sorted_contributions_pc2, las=2, col="darkblue") 
+```
+```{r}
+contribution_percentage_pc3 <- (abs(pca$rotation[,3]*100))/sum(abs(pca$rotation[,3]))
+sorted_contributions_pc3 <- sort(contribution_percentage_pc3[component_3_logical], decreasing=TRUE)
+barplot(sorted_contributions_pc3, las=2, col="darkblue")
+```
+```{r}
+contribution_percentage_pc4 <- (abs(pca$rotation[,4]*100))/sum(abs(pca$rotation[,4]))
+sorted_contributions_pc4 <- sort(contribution_percentage_pc4[component_4_logical], decreasing=TRUE)
+barplot(sorted_contributions_pc4, las=2, col="darkblue")
+```
+
+Sabiendo ahora cuales son las componentes principales vamos a visualizar gráficos en los que se contrapongan dos componentes principales y coloreemos cada punto según las siguientes variables que en ningún caso han sido usadas para calcular las componentes principales (recordemos que hemos quitado todas las variables demográficas antes de llamar a la función "prcom"):
+
+- Sexo
+- Edad
+- Zurdo/diestro
+- Educación
+- Hijo único
+- Pueblo/ciudad
+
+
+```{r}
+library(ggplot2) 
+```
+```{r}
+data.frame(z1=pca$x[,1],z2=pca$x[,2], Gender=data$Gender) %>% 
+  ggplot(aes(z1,z2,color=Gender)) + geom_point(size=2) +
+  labs(title="PC1-PC2 por género", x="Sensibilidad", y="Racionalidad") + #guides(color=guide_legend(title="HDI"))+
+    theme_light()  +theme(legend.position="bottom") 
+```
+```{r}
+data.frame(z1=pca$x[,2],z2=pca$x[,3], Gender=data$Gender) %>% 
+  ggplot(aes(z1,z2,color=Gender)) + geom_point(size=2) +
+  labs(title="PC2-PC3 por género", x="Racionalidad", y="Extroversión") + #guides(color=guide_legend(title="HDI"))+
+    theme_light()  +theme(legend.position="bottom") 
+```
+```{r}
+data.frame(z1=pca$x[,3],z2=pca$x[,4], Gender=data$Gender) %>% 
+  ggplot(aes(z1,z2,color=Gender)) + geom_point(size=2) +
+  labs(title="PC3-PC4 por género", x="Extroversión", y="Agresividad") + #guides(color=guide_legend(title="HDI"))+
+    theme_light()  +theme(legend.position="bottom") 
+```
+```{r}
+data.frame(z1=pca$x[,4],z2=pca$x[,1], Gender=data$Gender) %>% 
+  ggplot(aes(z1,z2,color=Gender)) + geom_point(size=2) +
+  labs(title="PC4-PC1 por género", x="Agresividad", y="Sensibilidad") + #guides(color=guide_legend(title="HDI"))+
+    theme_light()  +theme(legend.position="bottom") 
+```
+
+
+En los tres gráficos anteriores vemos como algunos perfiles de personalidad que describen las componentes principales dividen a los varones de las mujeres. Principalmente podemos ver esta división en sensibilidad (las mujeres son más sensibles) y racionalidad (las mujeres son más racionales)
+
+Siguiendo esta misma estrategia (ver los tres gráficos que relacionan pc1, pc2, pc3 y pc4) miramos el resto de variables. Solo se muestran a partir de ahora los gráficos más relevantes si es que los hay.
+
+```{r}
+data.frame(z1=pca$x[,1],z2=pca$x[,2], Handed=data$Age) %>% 
+  ggplot(aes(z1,z2,color=Handed)) + geom_point(size=2) +
+  labs(title="First two principal components (scores)", x="Cultura", y="Ciencia/compras") + #guides(color=guide_legend(title="HDI"))+
+    theme_light()  +theme(legend.position="bottom") 
+```
+```{r}
+data.frame(z1=pca$x[,1],z2=pca$x[,2], Handed=data$Left...right.handed) %>% 
+  ggplot(aes(z1,z2,color=Handed)) + geom_point(size=2) +
+  labs(title="First two principal components (scores)", x="Cultura", y="Ciencia/compras") + #guides(color=guide_legend(title="HDI"))+
+    theme_light()  +theme(legend.position="bottom") 
+```
+```{r}
+data.frame(z1=pca$x[,1],z2=pca$x[,2], Education=data$Education) %>% 
+  ggplot(aes(z1,z2,color=Education)) + geom_point(size=2) +
+  labs(title="First two principal components (scores)", x="Cultura", y="Ciencia/compras") + #guides(color=guide_legend(title="HDI"))+
+    theme_light()  +theme(legend.position="bottom") 
+```
+```{r}
+data.frame(z1=pca$x[,1],z2=pca$x[,2], Only.child=data$Only.child) %>% 
+  ggplot(aes(z1,z2,color=Only.child)) + geom_point(size=2) +
+  labs(title="First two principal components (scores)", x="Cultura", y="Ciencia/compras") + #guides(color=guide_legend(title="HDI"))+
+    theme_light()  +theme(legend.position="bottom") 
+```
+```{r}
+data.frame(z1=pca$x[,1],z2=pca$x[,2], Origin=data$Village...town) %>% 
+  ggplot(aes(z1,z2,color=Origin)) + geom_point(size=2) +
+  labs(title="First two principal components (scores)", x="Cultura", y="Ciencia/compras") + #guides(color=guide_legend(title="HDI"))+
+    theme_light()  +theme(legend.position="bottom") 
+```
+
+Comprobamos que aparte del sexo no parece haber relación entre las pc y las variables edad, zurdo/diestro, hijo único y pueblo/ciudad.
+
+Antes de sacar conclusiones hacemos otro tipo de visualización por si se nos hubiese escapado algo. 
+
+```{r}
+pc_avgs <- data.frame(z1=pca$x[,1],z2=pca$x[,2],z3=pca$x[,3],z4=pca$x[,4], Gender=data$Gender) %>% 
+  group_by(Gender) %>% 
+  summarise(Sensibilidad=mean(z1), Racionalidad=mean(z2), Extroversion=mean(z3), Agresividad=mean(z4))
+
+pc_avgs <- pivot_longer(pc_avgs, cols=2:5, names_to="pc", values_to="avg")
+  
+ggplot(data=pc_avgs, aes(x=Gender,y=avg,fill=Gender)) + 
+  geom_col(width=0.5)  + 
+  facet_grid(cols = vars(pc)) +
+  theme_light() +labs(title="Average PCs by Gender")
+```
+
+Insights:
+
+- Las mujeres son más sensibles y racionales que los hombres. 
+- Hombres y mujeres son a partes iguales agresivos y extrovertidos
+
+```{r}
+pc_avgs <- data.frame(z1=pca$x[,1],z2=pca$x[,2],z3=pca$x[,3],z4=pca$x[,4], Age=data$Age) %>% 
+  group_by(Age) %>% 
+  summarise(Sensibilidad=mean(z1), Racionalidad=mean(z2), Extroversion=mean(z3), Agresividad=mean(z4))
+
+pc_avgs <- pivot_longer(pc_avgs, cols=2:5, names_to="pc", values_to="avg")
+  
+ggplot(data=pc_avgs, aes(x=Age,y=avg,fill=Age)) + 
+  geom_col(width=0.5,)  + 
+  facet_grid(cols = vars(pc)) +
+  theme(axis.text.x = element_text(angle = 90)) +labs(title="Average PCs by Age") 
+```
+
+Insights:
+
+- La principal diferencia entre personas de más y menos que 20 años es la racionalidad. Sorprendentemente las personas de menos de 20 años son más racionales, no obstante hay que tener en cuenta que la encuesta está hecha en perfiles entre 16 y 26 años.
+
+```{r}
+pc_avgs <- data.frame(z1=pca$x[,1],z2=pca$x[,2],z3=pca$x[,3],z4=pca$x[,4], Handed=data$Left...right.handed) %>% 
+  group_by(Handed) %>% 
+  summarise(Sensibilidad=mean(z1), Racionalidad=mean(z2), Extroversion=mean(z3), Agresividad=mean(z4))
+
+pc_avgs <- pivot_longer(pc_avgs, cols=2:5, names_to="pc", values_to="avg")
+  
+ggplot(data=pc_avgs, aes(x=Handed,y=avg,fill=Handed)) + 
+  geom_col(width=0.5,)  + 
+  facet_grid(cols = vars(pc)) +
+  theme(axis.text.x = element_text(angle = 90)) +labs(title="Average PCs by good hand") 
+```
+
+Insights:
+
+- Los zurdos son poco racionales. Esto puede encajar con la teoría de que los zurdos son más creativos que los diestros o simplemente puede reflejar que la muestra de zurdos encuestados es tan pequeña que está sesgada.
+
+```{r}
+pc_avgs <- data.frame(z1=pca$x[,1],z2=pca$x[,2],z3=pca$x[,3],z4=pca$x[,4], Education=data$Education) %>% 
+  group_by(Education) %>% 
+  summarise(Sensibilidad=mean(z1), Racionalidad=mean(z2), Extroversion=mean(z3), Agresividad=mean(z4))
+
+pc_avgs <- pivot_longer(pc_avgs, cols=2:5, names_to="pc", values_to="avg")
+  
+ggplot(data=pc_avgs, aes(x=Education,y=avg,fill=Education)) + 
+  geom_col(width=0.5,)  + 
+  facet_grid(cols = vars(pc)) +
+  theme(axis.text.x = element_text(angle = 90)) +labs(title="Average PCs by education") 
+```
+```{r}
+pc_avgs <- data.frame(z1=pca$x[,1],z2=pca$x[,2],z3=pca$x[,3],z4=pca$x[,4], Only.child=data$Only.child) %>% 
+  group_by(Only.child) %>% 
+  summarise(Sensibilidad=mean(z1), Racionalidad=mean(z2), Extroversion=mean(z3), Agresividad=mean(z4))
+
+pc_avgs <- pivot_longer(pc_avgs, cols=2:5, names_to="pc", values_to="avg")
+  
+ggplot(data=pc_avgs, aes(x=Only.child,y=avg,fill=Only.child)) + 
+  geom_col(width=0.5,)  + 
+  facet_grid(cols = vars(pc)) +
+  theme() +labs(title="Average PCs by only child") 
+```
+```{r}
+pc_avgs <- data.frame(z1=pca$x[,1],z2=pca$x[,2],z3=pca$x[,3],z4=pca$x[,4], Origin=data$Village...town) %>% 
+  group_by(Origin) %>% 
+  summarise(Sensibilidad=mean(z1), Racionalidad=mean(z2), Extroversion=mean(z3), Agresividad=mean(z4))
+
+pc_avgs <- pivot_longer(pc_avgs, cols=2:5, names_to="pc", values_to="avg")
+  
+ggplot(data=pc_avgs, aes(x=Origin,y=avg,fill=Origin)) + 
+  geom_col(width=0.5,)  + 
+  facet_grid(cols = vars(pc)) +
+  theme(axis.text.x = element_text(angle = 90)) +labs(title="Average PCs by origin") 
+```
+
+Como conclusión general y respuesta a la pregunta que nos planteábamos. En general, tu sexo, edad, origen, etc. no definen completamente quien eres pero tienen un impacto fuerte en algunos aspectos de la personalidad.
+
+No obstante no todo es de color de rosa. A continuación vemos un pequeño análisis del porcentaje de la varianza que explican las 4 primeras componentes principales:
+
+```{r}
+var_explained <- pca$sdev^2 / sum(pca$sdev^2)
+```
+```{r}
+qplot(c(1:10), var_explained[1:10]) + 
+  geom_line() + 
+  xlab("Principal Component") + 
+  ylab("Variance Explained") +
+  ggtitle("Scree Plot") +
+  ylim(0, 1)
+```
+
+Total de varianza explicada por las 4 primeras PC:
+
+```{r}
+sum(var_explained[1:4])
+```
+
+Aunque 0.2 pueda parecer una parte muy pequeña de la varianza, nos ha servido para diferenciar 4 componentes principales que tienen sentido (cada una es un rasgo de la personalidad) y para separar basándonos en algunas de ellas a hombres y mujeres.
+
+## FA
+
+Para hacer FA vemos que nos encontramos con el mismo problema del porcentaje de varianza explicado. Para llegar a 0.5 necesitamos 40 factores. Omito el cálculo porque la salida es muy grande.
+
+Vamos a hacer el FA con 5 factores que explican una quinta parte de la varianza (al igual que pasaba con PC). Parece ambicioso intentar reducir los rasgos de la personalidad a 5 valores pero en PC hemos obtenido resultados aceptables:
+
+```{r}
+x.f <- factanal(select(data, -demographics_column_names), factors = 5, rotation="none", scores="regression")
+x.f
+```
+
+Nuevamente no podemos visualizar el aporte de todas las variables a cada factor a la vez:
+
+```{r}
+par(mfrow=c(3,1))
+barplot(x.f$loadings[,1], names=F, las=2, col="darkblue", ylim = c(-1, 1))
+barplot(x.f$loadings[,2], names=F, las=2, col="darkblue", ylim = c(-1, 1))
+barplot(x.f$loadings[,3], las=2, col="darkblue", ylim = c(-1, 1))
+barplot(x.f$loadings[,4], las=2, col="darkblue", ylim = c(-1, 1))
+
+```
+
+Hacemos con PC y reducimos a las diez variables que más contribuyen a cada factor:
+
+```{r}
+plot_factor <- function(n_factor, threshold){
+  factor_logical <- abs(x.f$loadings[,n_factor]) > threshold
+  f <- colnames(select(data,-demographics_column_names))[factor_logical]
+  print(paste("Factor ", n_factor, sep="", collapse=NULL) )
+  print(f)
+  contribution_percentage_f <- (x.f$loadings[,n_factor]*100)/sum(abs(x.f$loadings[,n_factor]))
+  sorted_contributions_f <- sort(contribution_percentage_f[factor_logical], decreasing=TRUE)
+  return(barplot(sorted_contributions_f, las=2, col="darkblue"))
+}
+```
+```{r}
+plot_factor(1, 0.42)
+```
+```{r}
+plot_factor(2, 0.4)
+```
+```{r}
+plot_factor(3, 0.4)
+```
+```{r}
+plot_factor(4, 0.27)
+```
+```{r}
+plot_factor(5, 0.27)
+```
+
+
+Constatamos que los factores coinciden ampliamente con el análisis de las PC que recordemos brevemente como era (para verlo más detallado volver a la interpretación de las PC porque es prácticamente ideéntico):
+
+- factor 1: Sensibilidad (Romanticismo, danza, exhibiciones artísticas, Life.strugles ~ I cry when I feel down or things don't go the right way.)
+- factor 2: Racional / ciencias-humanidades (Historia, documentales, opera, física)
+- factor 3: Extroversión (Bailar, felicidad, amigos, socializar)
+- factor 4: Agresividad (thriller, cheating.in.school, changin.the.past ~ I wish I could change the past because of the things I have done., criminal.damage ~ I damaged things in the past when angry.)
+- factor 5: Racional / Ciencias-ingeniería (PC, Physics, Mathematics, Cars, Internet)
+
+De la misma manera que con las PC podemos ahora comprobar si los factores dividen el dataset por género, por edad o por alguna otra característica. Los resultados son prácticamente idénticos y las conclusiones también por lo que omito volver a incluir muchos gráficos que van a ser iguales a los de PC. Vemos sin embargo algunos gráficos hechos usando los factores:
+
+```{r}
+data.frame(z1=x.f$scores[,1],z2=x.f$scores[,2], Gender=data$Gender) %>% 
+  ggplot(aes(z1,z2,color=Gender)) + geom_point(size=2) +
+  labs(title="F1-F2 por género", x="Sensibilidad", y="Racionalidad") + #guides(color=guide_legend(title="HDI"))+
+    theme_light()  +theme(legend.position="bottom") 
+```
+```{r}
+pc_avgs <- data.frame(z1=x.f$scores[,1],z2=x.f$scores[,2],z3=x.f$scores[,3],z4=x.f$scores[,4], Education=data$Education) %>% 
+  group_by(Education) %>% 
+  summarise(Sensibilidad=mean(z1), Racionalidad=mean(z2), Extroversion=mean(z3), Agresividad=mean(z4))
+
+pc_avgs <- pivot_longer(pc_avgs, cols=2:5, names_to="pc", values_to="avg")
+  
+ggplot(data=pc_avgs, aes(x=Education,y=avg,fill=Education)) + 
+  geom_col(width=0.5,)  + 
+  facet_grid(cols = vars(pc)) +
+  theme(axis.text.x = element_text(angle = 90)) +labs(title="Average PCs by education") 
+```
+
+## Forecasting
+
+Si hacemos un resumen de lo que tenemos hasta ahora vemos que hemos obtenido cuatro rasgos de la personalidad/personalidades basándonos en las 140 variables del dataset (que corresponden a 140 respuestas a una encuesta). Los rasgos son estos:
+
+- Sensibilidad
+- Agresividad
+- Extroversión
+- Racionalidad
+
+Claramente los rasgos son opuestos dos a dos: 
+
+- Sensibilidad/agresividad
+- Racionalidad/extroversión
+
+Con esto en mente podemos elaborar una métrica con la que ubicar en un plano a las personas según su personalidad (tendríamos el eje sensibilidad/agresividad y el eje racionalidad/extroversión). Si alguien respondiese a las preguntas de la encuesta utilizando las PC o el FA podríamos tratar de predecir su personalidad. He hecho este experimento conmigo mismo:
+
+```{r}
+respuestas_musica = c(4,4,4,4,3,4,5,5,2,1,1,1,2,3,3,3,5,2,3)
+respuestas_peliculas = c(4,3,4,4,2,3,4,3,3,4,4,5)
+respuestas_hobbies = c(4,5,4,4,4,4,4,5,4,2,1,3,2,3,3,1,4,2,5,2,4,1,5,3,4,2,1,5,2,5,3,4)
+respuestas_fobias = c(2,2,4,4,3,5,2,4,5,1)
+respuestas_opiniones = c(4,1,3,2,3,3,4,4,2,4,5,2,2,3,1,3,5,1,4,1,2,5,4,2,1,5,2,2,4,2,4,2,4,3,3,5,3,5,3,5,3,5,1,5,1,4,4,2,4,2,5,5,1,3)
+respuestas_demograficas = c(23,"Male","Right handed","College/Bachellor degree","No","Village","block of flats")
+respuestas_sergio = c(respuestas_musica,
+                      respuestas_peliculas,
+                      respuestas_hobbies,
+                      respuestas_fobias,
+                      respuestas_opiniones
+                      )
+```
+```{r}
+length(respuestas_sergio)
+dim(select(data, -demographics_column_names))
+```
+```{r}
+data_with_sergio <- rbind(select(data, -demographics_column_names), respuestas_sergio)
+dim(data_with_sergio) 
+```
+```{r}
+pca = prcomp(data_with_sergio, scale=T)
+#calculo las pc para mis respuestas (mis respuestas están en la última fila del dataframe)
+sensibilidad_sergio=pca$x[dim(data_with_sergio)[1],1]
+racionalidad_sergio=pca$x[dim(data_with_sergio)[1],2]
+extroversion_sergio=pca$x[dim(data_with_sergio)[1],3]
+agresividad_sergio=pca$x[dim(data_with_sergio)[1],4]
+```
+
+Teniendo en cuenta que las medias de cada rasgo de la personalidad para todo el dataset tienen que ser 0 visualicemos hacia donde se desvían mis rasgos:
+ 
+```{r}
+rasgos_sergio = c(sensibilidad=sensibilidad_sergio, 
+                  racionalidad=racionalidad_sergio, 
+                  extroversion=extroversion_sergio, 
+                  agresividad=agresividad_sergio)
+barplot(rasgos_sergio, col="darkblue")
+```
+
+Personalmente creo que los resultados que me han salido tienen bastante sentido (me considero extrovertido y emocional). Recuperando que los rasgos eran opuestos dos a dos:
+
+- Sensibilidad/agresividad
+- Racionalidad/extroversión
+
+Tiene sentido (o quizás ha sido casualidad en mi caso) que las puntuaciones dos a dos de estos rasgos sea opuesta.
+
+## Conclusiones
+
+Remontandonos a la pregunta que nos planteábamos al principio de esta práctica:
+
+- ¿Se puede determinar quien soy (género, edad, mano buena,...) basándonos en mis gustos, intereses, fobias y opiniones?
+
+Hemos llegado a varias conclusiones:
+
+1. Las respuestas a 140 preguntas sobre gustos, intereses, fobias y opiniones se pueden reducir a 4 o 5 rasgos distintos de la personalidad. Por tanto la pregunta que nos hacíamos es equivalente a preguntarnos ¿Determina mi personalidad quién soy?
+2. Tras los cálculos y las visualizaciones parece claro que algunos rasgos de la personalidad como la sensibilidad y la racionalidad separan muy claramente a hombres y mujeres (sobre todo el primero de los dos). Mientras que por ejemplo esta diferenciación no existe atendiendo a otros rasgos como la extroversión y la agresividad.
+3. En cuanto al resto de variables que incluíamos en nuestra hipótesis (edad >20 o <20, zurdo/diestro, pueblo/ciudad, hijo único si o no) no hay ninguna evidencia clara de que estén separados por los rasgos de personalidad a los que hemos reducido las preguntas de la encuesta. Si acaso nos podemos encontrar con algunas curiosidades como que los zurdos paracen ser un poco más emocionales/creativos que los diestros.
+
+Estas conclusiones enumeradas han sido idénticas para PCA y factor analysis. Sabemos que la principal diferencia a nivel conceptual entre PCA y FA es que en PCA las componentes se calculan como combinaciones lineales de las variables originales y tratan de explicar tanta proporción de la varianza total de las variables como sea posible, mientras que por su parte, en FA es al revés, es decir, las variables originales se definen como combinaciones lineales de los factores que precisamente intentan explicar las covarianzas y correlaciones entre las variables.
+
+No obstante tiene sentido y parece conclusivo en el caso de nuestro dataset que ambos métodos orientados a la reducción de dimensiones hayan ofrecido resultados prácticamente idénticos.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
